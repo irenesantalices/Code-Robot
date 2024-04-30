@@ -1,5 +1,11 @@
 #include "math.h"
 
+#define N_MOTORES 5
+
+//Estados
+enum estado_general{reposo, recogida, deposito}; 
+enum estado_motor{moviendo, parado, emergencia};
+
 //Variables de control
 bool marcha, paro;
 bool marcha_anterior, paro_anterior;
@@ -8,23 +14,42 @@ bool griper_cerrado;
 //Parámetros del robot
 const double l1,l2,l3,l4;
 
-//Asignacion de Pines
 //Motores
-int pinA_M1, pinB_M1;
-int pinA_M2, pinB_M2;
-int pinA_M3, pinB_M3;
-int pinA_M4, pinB_M4;
-int pinA_M5, pinB_M5;
+typedef struct motor{
+  
+  //Pins
+  int pinA, pinB;
+
+  //Variables de posicion
+  double q_d;
+  double q_r;
+  double q_err;
+
+  //Variables de seguridad
+  double Pmax;
+
+  estado_motor estado;
+  
+}motor;
+
+motor motores[N_MOTORES];
+
+
+//Vatímetros
+typedef struct vatimetro{
+  //Pins
+  int pin;
+
+  //Variables
+  double P;
+  
+} vatimetro;
 
 //Encoder
 
 
 //Variables de posición y orientacion
 //Si de los encoder nos llegan las qs, podemos realimentar directamente las q
-double q1_d, q2_d, q3_d, q4_d, q5_d;
-double q1_r, q2_r, q3_r, q4_r, q5_r;
-double err_q1, err_q2, err_q3, err_q4, err_q5;
-
 double rango_error;
 
 typedef struct punto{
@@ -33,9 +58,6 @@ typedef struct punto{
 } punto;
 punto almacen, posicion, objetivo;
 
-//Estados
-enum estado_general{reposo, recogida, deposito}; 
-enum estado_motor{parado, moviendo, emergencia};
 
 //Funciones
 bool evaluar_flanco(bool pulsador, bool* pulsador_anterior);
@@ -44,27 +66,25 @@ bool abrir_gripper();
 
 void mover_robot(punto punto_intermedio);   //orientar antes de mover (activar q5)
 void ciclo_trabajo(punto objetivo);
-bool control_motor(double q_d, double q_r, double q_err, int pinA, int pinB);
+bool control_motor(motor& M);
 
 double realimentacion(double q_d, double q_r);
 
 //Principal
 void setup() {
+  int i; //Control de bucle
+
+  //Asignacion de potencia maxima
+  motores[0].Pmax = motores[1].Pmax = motores[2].Pmax = 0 * 0.6; //Parametros del motor
+  motores[3].Pmax =  0 * 0.6; //Parametros del motor
+  motores[4].Pmax = 0 * 0.6;
+
+  
   //Motores
-  pinMode(pinA_M1, OUTPUT);
-  pinMode(pinB_M1, OUTPUT);
-  
-  pinMode(pinA_M2, OUTPUT);
-  pinMode(pinB_M2, OUTPUT);
-  
-  pinMode(pinA_M3, OUTPUT);
-  pinMode(pinB_M3, OUTPUT);
-  
-  pinMode(pinA_M4, OUTPUT);
-  pinMode(pinB_M4, OUTPUT);
-  
-  pinMode(pinA_M5, OUTPUT);
-  pinMode(pinB_M5, OUTPUT);
+  for(i=0;i<N_MOTORES;i++){
+    pinMode(motores[i].pinA,OUTPUT);
+    pinMode(motores[i].pinB,OUTPUT);
+  }
 }
 
 void loop() {
@@ -111,41 +131,67 @@ void ciclo_trabajo(punto objetivo){
 }
 
 void mover_robot(punto punto_intermedio){
-  bool fin1, fin2, fin3, fin4, fin5;
-
+  bool fin[N_MOTORES];
+  
+  //Control bucles
+  bool finT;
+  int i; 
   //Calculamos las q necearias
   
   //Controlamos los motores
   do{
-    fin1 = control_motor(q1_d, q1_r, err_q1, pinA_M1, pinB_M1);
-    fin2 = control_motor(q2_d, q2_r, err_q2, pinA_M2, pinB_M2);
-    fin3 = control_motor(q3_d, q3_r, err_q3, pinA_M3, pinB_M3);
-    fin4 = control_motor(q4_d, q4_r, err_q4, pinA_M4, pinB_M4);
-    fin5 = control_motor(q5_d, q5_r, err_q5, pinA_M5, pinB_M5);
-  }while( fin1*fin2*fin3*fin4*fin5 != true);
+    finT = true;
+    for(i=0;i<N_MOTORES;i++){
+      fin[i] = control_motor(motores[i]);
+
+      //Bloqueo
+      if(motores[i].estado = emergencia){
+        while(true){
+          //Pozo hasta que los problemas esten solucionados
+          //W.P = analogRead(W.pin);
+        }
+      }
+      
+      finT = finT * fin[i];
+    }
+  }while( finT != true);
 }
 
 double realimentacion(double q_d, double q_r){
+  //Encoder
+  
   return q_d - q_r;
 }
 
-bool control_motor(double q_d, double q_r, double q_err, int pinA, int pinB){
-  q_err = realimentacion(q_d, q_r);
-  if(abs(q_err) < rango_error){
+bool control_motor(motor& M, vatimetro& W){
+
+  //Parada Emergenciza
+  //W.P = analogRead(W.pin);
+  if( W.P >= M.Pmax){
+    digitalWrite(M.pinA, LOW);
+    digitalWrite(M.pinB, LOW);
+    M.estado = emergencia;
+    return false;
+  }
+  
+  M.q_err = realimentacion(M.q_d, M.q_r);
+  if(abs(M.q_err) < rango_error){
     //Apagar motor si no lo esta
-    digitalWrite(pinA, LOW);
-    digitalWrite(pinB, LOW);
+    digitalWrite(M.pinA, LOW);
+    digitalWrite(M.pinB, LOW);
+    M.estado = parado;
     return true; //Acabado
   }
-  else if(q_err > 0){
+  else if(M.q_err > 0){
     //Motor Sentido horario
-    digitalWrite(pinA, HIGH);
-    digitalWrite(pinB, LOW);
+    digitalWrite(M.pinA, HIGH);
+    digitalWrite(M.pinB, LOW);
   }
   else{
     //Motor sentido antihorario
-    digitalWrite(pinA, LOW);
-    digitalWrite(pinB, HIGH);
+    digitalWrite(M.pinA, LOW);
+    digitalWrite(M.pinB, HIGH);
   }
+  M.estado = moviendo;
   return false; //Sigue funcionando
 }
