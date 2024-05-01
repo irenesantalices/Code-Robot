@@ -1,4 +1,5 @@
 #include "math.h"
+#include "Encoder.h"
 
 #define N_MOTORES 5
 
@@ -34,6 +35,15 @@ typedef struct motor{
 
 motor motores[N_MOTORES];
 
+//Encoders
+Encoder encoder_M1(1,2);
+Encoder encoder_M2(3,4);
+Encoder encoder_M3(5,6);
+Encoder encoder_M4(6,7);
+Encoder encoder_M5(7,8);
+
+Encoder* encoders[N_MOTORES];
+
 
 //Vatímetros
 typedef struct vatimetro{
@@ -45,8 +55,7 @@ typedef struct vatimetro{
   
 } vatimetro;
 
-//Encoder
-
+//Encoders
 
 //Variables de posición y orientacion
 //Si de los encoder nos llegan las qs, podemos realimentar directamente las q
@@ -66,9 +75,9 @@ bool abrir_gripper();
 
 void mover_robot(punto punto_intermedio);   //orientar antes de mover (activar q5)
 void ciclo_trabajo(punto objetivo);
-bool control_motor(motor& M);
+bool control_motor(motor& M, Encoder E);
 
-double realimentacion(double q_d, double q_r);
+double realimentacion(double q_d, double q_r, Encoder E);
 
 //Principal
 void setup() {
@@ -79,7 +88,13 @@ void setup() {
   motores[3].Pmax =  0 * 0.6; //Parametros del motor
   motores[4].Pmax = 0 * 0.6;
 
-  
+  //Introducimos por comodidad los encoders en un vector
+  encoders[0] = &encoder_M1;
+  encoders[1] = &encoder_M2;
+  encoders[2] = &encoder_M3;
+  encoders[3] = &encoder_M4;
+  encoders[4] = &encoder_M5;
+
   //Motores
   for(i=0;i<N_MOTORES;i++){
     pinMode(motores[i].pinA,OUTPUT);
@@ -142,7 +157,7 @@ void mover_robot(punto punto_intermedio){
   do{
     finT = true;
     for(i=0;i<N_MOTORES;i++){
-      fin[i] = control_motor(motores[i]);
+      fin[i] = control_motor(motores[i],*encoders[i]);
 
       //Bloqueo
       if(motores[i].estado = emergencia){
@@ -157,24 +172,25 @@ void mover_robot(punto punto_intermedio){
   }while( finT != true);
 }
 
-double realimentacion(double q_d, double q_r){
+double realimentacion(double q_d, double q_r, Encoder E){
   //Encoder
-  
+  q_r = E.read();
   return q_d - q_r;
 }
 
-bool control_motor(motor& M, vatimetro& W){
+bool control_motor(motor& M, Encoder E){
 
   //Parada Emergenciza
   //W.P = analogRead(W.pin);
+  /*
   if( W.P >= M.Pmax){
     digitalWrite(M.pinA, LOW);
     digitalWrite(M.pinB, LOW);
     M.estado = emergencia;
     return false;
   }
-  
-  M.q_err = realimentacion(M.q_d, M.q_r);
+  */
+  M.q_err = realimentacion(M.q_d, M.q_r,E);
   if(abs(M.q_err) < rango_error){
     //Apagar motor si no lo esta
     digitalWrite(M.pinA, LOW);
