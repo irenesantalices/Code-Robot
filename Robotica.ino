@@ -11,7 +11,11 @@
 enum bloque{normal, largo};
 bloque pieza = normal;
 
-enum estado_motor{moviendo, parado, emergencia};
+enum estado_motor{parado, moviendo, emergencia};
+enum estado_general{ok, bloqueo};
+
+//Pin pulsador inicio
+const uint8_t pinPulsador = 34;
 
 //Variables de control
 bool marcha, paro;
@@ -19,7 +23,7 @@ bool marcha_anterior, paro_anterior;
 bool griper_cerrado;
 
 //Parámetros del robot
-const double l1 = 0.26, l2 = 0.185 , l3 = 0.19 , l4 = 0.09, l5 = 0.075;
+const double l1 = 0.275, l2 = 0.20 , l3 = 0.19 , l4 = 0.09, l5 = 0.075;
 
 //Motores
 typedef struct motor{
@@ -46,11 +50,11 @@ typedef struct motor{
 motor motores[N_MOTORES];
 
 //Encoders
-Encoder encoder_M1(1,2);
-Encoder encoder_M2(3,4);
-Encoder encoder_M3(5,6);
-Encoder encoder_M4(6,7);
-Encoder encoder_M5(7,8);
+Encoder encoder_M1(24,25);
+Encoder encoder_M2(26,27);
+Encoder encoder_M3(28,29);
+Encoder encoder_M4(30,31);
+Encoder encoder_M5(32,33);
 
 Encoder* encoders[N_MOTORES];
 
@@ -70,10 +74,10 @@ amperimetro amperimetros[N_MOTORES];
 
 //Gripper
 typedef struct gripper{
-  int pinA, pinB, pinSDA = 6, pinSDL = 5;
+  int pinA, pinB, pinW1 = 19, pinW2 = 18; //Pines del vatimetro no son necesarios, se dejan como documentacion
 
 }gripper;
-gripper g{1,2};
+gripper g{0,1};
 
 //Amperimetro/Wattimetro del gripper
 DFRobot_INA219_IIC     ina219(&Wire, INA219_I2C_ADDRESS4);
@@ -101,12 +105,12 @@ void inicializar_watt();
 
 void definir_nuevo_objetivo();
 
-bool evaluar_flanco(bool pulsador, bool* pulsador_anterior);
+bool evaluar_FP(bool pulsador, bool* pulsador_anterior);
 
 void abrir_gripper();
 void cerrar_gripper();
 
-void mover_robot(punto punto_intermedio);   //orientar antes de mover (activar q5)
+estado_general mover_robot(punto punto_intermedio);   //orientar antes de mover (activar q5)
 void ciclo_trabajo();
 bool control_motor(motor& M, Encoder E, amperimetro& A);
 
@@ -118,7 +122,11 @@ void leer_I(amperimetro& A);
 
 //Principal
 void setup() {
-  
+
+ //Pulsador 
+  pinMode(pinPulsador,INPUT);
+
+  //Motor
   inicializar_motor();
   
   //Introducimos por comodidad los encoders en un vector
@@ -138,7 +146,10 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  ciclo_trabajo();
+  if(evaluar_FP()==true){
+    ciclo_trabajo();
+    inicializar_objetivo(); //Reset para construir la siguiente pared
+  }
 }
 
 void inicializar_motor(){
@@ -148,16 +159,16 @@ void inicializar_motor(){
   motores[0].Imax = motores[4].Imax = 2.8 * 0.6;
   motores[1].Imax = motores[2].Imax = motores[3].Imax = 3.0 * 0.6;
 
-/*
-  //Relaciones de transformacion de velocidad y a PWM
-  motores[0].relacion_reductora = motores[1].relacion_reductora = motores[2].relacion_reductora = 0; 
-  motores[3].relacion_reductora = motores[4].relacion_reductora = 0; 
 
-  motores[0].relacion_PWM = motores[1].relacion_PWM = motores[2].relacion_PWM = 0; 
-  motores[3].relacion_PWM = motores[4].relacion_PWM = 0; 
-*/
 
   //Pines
+  //Asignacion
+  for(i=0; i<N_MOTORES; i++){
+    motores[4-i].pinA=2+2*i;
+    motores[4-i].pinB=3+2*i;
+  }
+
+  //Inicializacion
   for(i=0;i<N_MOTORES;i++){
     pinMode(motores[i].pinA,OUTPUT);
     pinMode(motores[i].pinB,OUTPUT);
@@ -168,15 +179,16 @@ void inicializar_amperimetro(){
   int i; //Control de bucle
 
   //Pines
-  for(i=0;i<N_MOTORES;i++){
-    amperimetros[i].pin = 1 + i; //Cambiar al conectar
+  for(i=0;i<N_MOTORES-1;i++){
+    amperimetros[i].pin = 23 - i; //Cambiar al conectar
   }
+  amperimetros[i].pin = 17;
 }
 
 void inicializar_almacen(){
   almacen.x = 0;
-  almacen.y = 0;
-  almacen.z = 0;
+  almacen.y = 0.26;
+  almacen.z = 0.03;
 }
 
 void inicializar_objetivo(){
@@ -198,9 +210,9 @@ void definir_nuevo_objetivo(){
   
   if(objetivo.x == objetivo.y == objetivo.z == 0){
     //CAMBIAR
-    objetivo.x = 0;
-    objetivo.y = 0;
-    objetivo.z = 0;
+    objetivo.x = 0.275;
+    objetivo.y = -0.085;
+    objetivo.z = 0.045;
     
     contador++;
     return;
@@ -208,7 +220,7 @@ void definir_nuevo_objetivo(){
 
   switch(pieza){
     case largo:
-      objetivo.y += 0;
+      objetivo.y += 0.042*3;
 
       contador++;
       if(contador>=2){
@@ -218,11 +230,11 @@ void definir_nuevo_objetivo(){
       break;
     case normal:
       if(contador == 0){
-        objetivo.z += 0;
-        objetivo.y += 0;
+        objetivo.z += 0.04;
+        objetivo.y += -0.085-0.042/2;
       }
       else
-        objetivo.y += 0;
+        objetivo.y += 0.042*2;
       contador++;
       if(contador>=3){
         pieza = largo;
@@ -235,7 +247,8 @@ void definir_nuevo_objetivo(){
 bool evaluar_FP(bool pulsador, bool* pulsador_anterior){
   bool flanco;
 
-  flanco = (pulsador == true && *pulsador_anterior!=pulsador);
+  pulsador = digitalRead(pinPulsador);
+  flanco = (pulsador && *pulsador_anterior!=pulsador);
   *pulsador_anterior = pulsador;
   
   return flanco;
@@ -271,9 +284,13 @@ void ciclo_trabajo(){
   punto_intermedio1.x=almacen.x;
   punto_intermedio1.y=almacen.y;
   punto_intermedio1.z=almacen.z + distancia_seguridad;
-  mover_robot(punto_intermedio1);
+  if(mover_robot(punto_intermedio1) == bloqueo){
+    return;
+  }
 
-  mover_robot(almacen); //posibilidad de dejarlo fuera
+  if(mover_robot(punto_intermedio1) == bloqueo){
+    return;
+  } //posibilidad de dejarlo fuera
 
   cerrar_gripper();
   
@@ -282,24 +299,29 @@ void ciclo_trabajo(){
   punto_intermedio2.x=objetivo.x;
   punto_intermedio2.y=objetivo.y;
   punto_intermedio2.z=posicion.z;
-  mover_robot(punto_intermedio2);
+  if(mover_robot(punto_intermedio2) == bloqueo){
+    return;
+  }
   
-  mover_robot(objetivo);
+  if(mover_robot(objetivo) == bloqueo){
+    return;
+  }
 
   abrir_gripper();
 
   //Regreso
-  mover_robot(punto_intermedio2);
-
+  if(mover_robot(punto_intermedio2) == bloqueo){
+    return;
+  }
   
 }
 
-void mover_robot(punto punto_intermedio){
+estado_general mover_robot(punto punto_intermedio){
   bool fin[N_MOTORES];
   
   //Control bucles
   bool finT;
-  int i; 
+  int i, j; //control bucles 
   //Calculamos las q necearias
    //decalracion orientaciones
   const punto a={0,0,-1};
@@ -340,10 +362,11 @@ void mover_robot(punto punto_intermedio){
       fin[i] = control_motor(motores[i], *encoders[i], amperimetros[i]);
 
       //Bloqueo
-      if(motores[i].estado = emergencia){
-        while(true){
-          //Pozo hasta que los problemas esten solucionados
-          leer_I(amperimetros[i]);
+      if(motores[i].estado == emergencia){
+        for(j=0;j<N_MOTORES;j++){
+          digitalWrite(motores[j].pinA, LOW);
+          digitalWrite(motores[j].pinB, LOW);
+          return bloqueo;
         }
       }
       
