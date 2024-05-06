@@ -124,6 +124,12 @@ void leer_I(amperimetro& A);
 //Principal
 void setup() {
 
+  int i;
+  
+  //Debug
+  Serial.begin(9600);
+  Serial.println("Inicializando...");
+
  //Pulsador 
   pinMode(pinPulsador,INPUT);
 
@@ -143,22 +149,26 @@ void setup() {
   inicializar_almacen();
   inicializar_objetivo();
 
+  //Debug
+  Serial.println("Inicializacion completa");
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
-  if(evaluar_FP()==true){
-    ciclo_trabajo();
-  }
+  
+  Serial.println("Iniciando ciclo de trabajo...");
+  ciclo_trabajo();
+  
 }
 
 void inicializar_motor(){
   int i; //Control de bucle
 
-  //Potencia
+  Serial.println("Inicializando Motores");
+
+  //Corriente maxima
   motores[0].Imax = motores[4].Imax = 2.8 * 0.6;
   motores[1].Imax = motores[2].Imax = motores[3].Imax = 3.0 * 0.6;
-
 
 
   //Pines
@@ -178,15 +188,14 @@ void inicializar_motor(){
 void inicializar_amperimetro(){
   int i; //Control de bucle
 
+  Serial.println("Inicializando amperimetros");
+
   //Pines
   for(i=0;i<N_MOTORES-1;i++){
-    amperimetros[i].pin = 23 - i; //Cambiar al conectar
+    amperimetros[i].pin = A9 - i; //Cambiar al conectar
   }
-  amperimetros[i].pin = 17;
+  amperimetros[i].pin = A3;
 
-  for(i=0;i<N_MOTORES;i++){
-    
-  }
 }
 
 void inicializar_almacen(){
@@ -202,8 +211,11 @@ void inicializar_objetivo(){
 }
 
 void inicializar_watt(){
+  Serial.println("Inicializando Vatimetros");
+
   while(ina219.begin() != true) {
     //ERROR
+    Serial.println("ERROR AL INICIALIZAR VATIMETRO");
   }
 
   ina219.linearCalibrate(ina219Reading_mA, extMeterReading_mA);
@@ -211,7 +223,8 @@ void inicializar_watt(){
 
 void definir_nuevo_objetivo(){
   static int contador = 0;
-  
+  Serial.println("Definiendo Punto Objetivo...");
+
   if(objetivo.x == objetivo.y == objetivo.z == 0){
     //CAMBIAR
     objetivo.x = 0.275;
@@ -260,6 +273,8 @@ bool evaluar_FP(){
 }
 
 void abrir_gripper(){
+  Serial.println("Abriendo Gripper...");
+
   while(abs(ina219.getCurrent_mA()) > 0.2){
     analogWrite(g.pinA, (255/2));
     digitalWrite(g.pinB, LOW);
@@ -271,6 +286,8 @@ void abrir_gripper(){
 }
 
 void cerrar_gripper(){
+  Serial.println("Cerrando Gripper...");
+
   while(abs(ina219.getCurrent_mA()) > 0.2){
     analogWrite(g.pinA, 255/2);
     digitalWrite(g.pinB, LOW);
@@ -305,7 +322,6 @@ void ciclo_trabajo(){
   punto_intermedio2.y=objetivo.y;
   punto_intermedio2.z=objetivo.z;
   if(mover_robot(punto_intermedio2) == bloqueo){
-    digitalWrite(34,HIGH);
     return;
   }
   
@@ -325,6 +341,7 @@ void ciclo_trabajo(){
 estado_general mover_robot(punto punto_intermedio){
   bool fin[N_MOTORES];
   
+  Serial.println("Moviendo Robot, espere...");
   //Control bucles
   bool finT;
   int i, j; //control bucles 
@@ -336,7 +353,8 @@ estado_general mover_robot(punto punto_intermedio){
   
   //declaracion de variables intermediass
   double A,B,c5,s5,q234,p,c2,s2;
-  
+  Serial.println("Calculando Puntos...");
+
   motores[0].q_d =atan2(punto_intermedio.y,punto_intermedio.x);
   
   c5 = sin(motores[0].q_d)*o.x-cos(motores[0].q_d)*o.y;      //que es n y o??
@@ -360,7 +378,7 @@ estado_general mover_robot(punto punto_intermedio){
 
   motores[3].q_d = q234-motores[2].q_d-motores[1].q_d;
 
-
+  Serial.println("Iniciando Motores...");
   //Controlamos los motores
   do{
     finT = true;
@@ -392,6 +410,7 @@ bool control_motor(motor& M, Encoder E, amperimetro& A){
 
   leer_I(A);
   if(A.I > abs(M.Imax)){
+    Serial.println("ERROR, CORRIENTE MAXIMA SUPERADA");
     M.estado = emergencia;
     return false;
   }
