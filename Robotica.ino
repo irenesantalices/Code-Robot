@@ -17,10 +17,11 @@ enum estado_general{ok, bloqueo};
 //Pin pulsador inicio
 const uint8_t pinPulsador = 34;
 
+
 //Variables de control
-bool marcha, paro;
-bool marcha_anterior, paro_anterior;
-bool griper_cerrado;
+bool pulsador = false;
+bool pulsador_anterior = false;
+
 
 //Parámetros del robot
 const double l1 = 0.275, l2 = 0.20 , l3 = 0.19 , l4 = 0.09, l5 = 0.075;
@@ -105,7 +106,7 @@ void inicializar_watt();
 
 void definir_nuevo_objetivo();
 
-bool evaluar_FP(bool pulsador, bool* pulsador_anterior);
+bool evaluar_FP();
 
 void abrir_gripper();
 void cerrar_gripper();
@@ -148,7 +149,6 @@ void loop() {
   // put your main code here, to run repeatedly:
   if(evaluar_FP()==true){
     ciclo_trabajo();
-    inicializar_objetivo(); //Reset para construir la siguiente pared
   }
 }
 
@@ -183,6 +183,10 @@ void inicializar_amperimetro(){
     amperimetros[i].pin = 23 - i; //Cambiar al conectar
   }
   amperimetros[i].pin = 17;
+
+  for(i=0;i<N_MOTORES;i++){
+    
+  }
 }
 
 void inicializar_almacen(){
@@ -239,17 +243,18 @@ void definir_nuevo_objetivo(){
       if(contador>=3){
         pieza = largo;
         contador = 0;
+        inicializar_objetivo(); //Reset para construir la siguiente pared
       }
     break;
   }
 }
 
-bool evaluar_FP(bool pulsador, bool* pulsador_anterior){
+bool evaluar_FP(){
   bool flanco;
 
   pulsador = digitalRead(pinPulsador);
-  flanco = (pulsador && *pulsador_anterior!=pulsador);
-  *pulsador_anterior = pulsador;
+  flanco = (pulsador && pulsador_anterior!=pulsador);
+  pulsador_anterior = pulsador;
   
   return flanco;
 }
@@ -288,7 +293,7 @@ void ciclo_trabajo(){
     return;
   }
 
-  if(mover_robot(punto_intermedio1) == bloqueo){
+  if(mover_robot(almacen) == bloqueo){
     return;
   } //posibilidad de dejarlo fuera
 
@@ -298,8 +303,9 @@ void ciclo_trabajo(){
 
   punto_intermedio2.x=objetivo.x;
   punto_intermedio2.y=objetivo.y;
-  punto_intermedio2.z=posicion.z;
+  punto_intermedio2.z=objetivo.z;
   if(mover_robot(punto_intermedio2) == bloqueo){
+    digitalWrite(34,HIGH);
     return;
   }
   
@@ -373,6 +379,7 @@ estado_general mover_robot(punto punto_intermedio){
       finT = finT && fin[i];
     }
   }while( finT != true);
+  return;
 }
 
 double realimentacion(double q_d, double q_r, Encoder E){
@@ -414,6 +421,7 @@ bool control_motor(motor& M, Encoder E, amperimetro& A){
 int grados_a_PWM(double angulo, double relacion_reductora, double relacion_PWM){
   return(round(angulo * relacion_reductora * relacion_PWM));
 }
+
 
 void leer_I(amperimetro& A){
   A.A_D = analogRead(A.pin);
