@@ -41,8 +41,13 @@ typedef struct motor{
   double q_r;
   double q_err;
 
+  //Variables del encoder
+  double resolucion_encoder;
+
   //Variables de seguridad
   double Imax;
+
+
 
   estado_motor estado;
   
@@ -88,7 +93,7 @@ float ina219Reading_mA = 1000;
 float extMeterReading_mA = 1000;
 
 //Si de los encoder nos llegan las qs, podemos realimentar directamente las q
-double rango_error = 0.1;
+double rango_error = 1.2;
 
 typedef struct punto{
   double x, y, z;
@@ -115,7 +120,7 @@ estado_general mover_robot(punto punto_intermedio);   //orientar antes de mover 
 void ciclo_trabajo();
 bool control_motor(motor& M, Encoder E, amperimetro& A);
 
-double realimentacion(double q_d, double q_r, Encoder E);
+void realimentacion(Encoder E, motor& M);
 
 int grados_a_PWM(double angulo, double relacion_reductora, double relacion_PWM);
 void leer_I(amperimetro& A);
@@ -127,7 +132,7 @@ void setup() {
   int i;
   
   //Debug
-  Serial.begin(9600);
+  Serial.begin(115200);
   Serial.println("Inicializando...");
 
  //Pulsador 
@@ -136,12 +141,7 @@ void setup() {
   //Motor
   inicializar_motor();
   
-  //Introducimos por comodidad los encoders en un vector
-  encoders[0] = &encoder_M1;
-  encoders[1] = &encoder_M2;
-  encoders[2] = &encoder_M3;
-  encoders[3] = &encoder_M4;
-  encoders[4] = &encoder_M5;
+  inicializar_encoder();
 
   inicializar_amperimetro();
   inicializar_watt();
@@ -156,9 +156,10 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
   
-  Serial.println("Iniciando ciclo de trabajo...");
-  ciclo_trabajo();
-  
+  if(evaluar_FP()==true){
+    Serial.println("Iniciando ciclo de trabajo...");
+    ciclo_trabajo();
+  }
 }
 
 void inicializar_motor(){
@@ -183,6 +184,13 @@ void inicializar_motor(){
     pinMode(motores[i].pinA,OUTPUT);
     pinMode(motores[i].pinB,OUTPUT);
   }
+
+  //Resolucion Encoder
+  motores[0].resolucion_encoder = 0.375;
+  motores[1].resolucion_encoder = 360/823.1;
+  motores[2].resolucion_encoder = 360/823.1;
+  motores[3].resolucion_encoder = 360/341.2;
+  motores[4].resolucion_encoder = 360/1920;
 }
 
 void inicializar_amperimetro(){
@@ -200,7 +208,7 @@ void inicializar_amperimetro(){
 
 void inicializar_almacen(){
   almacen.x = 0;
-  almacen.y = 0.26;
+  almacen.y = -0.26;
   almacen.z = 0.03;
 }
 
@@ -216,9 +224,28 @@ void inicializar_watt(){
   while(ina219.begin() != true) {
     //ERROR
     Serial.println("ERROR AL INICIALIZAR VATIMETRO");
+    delay(2000);
   }
 
   ina219.linearCalibrate(ina219Reading_mA, extMeterReading_mA);
+}
+
+void inicializar_encoder(){
+  int i;
+  Serial.println("Inicializando Encoders");
+
+  //Introducimos por comodidad los encoders en un vector
+  encoders[0] = &encoder_M1;
+  encoders[1] = &encoder_M2;
+  encoders[2] = &encoder_M3;
+  encoders[3] = &encoder_M4;
+  encoders[4] = &encoder_M5;
+
+  encoders[0] -> write(-90/motores[0].resolucion_encoder);
+  encoders[1] -> write(90/motores[1].resolucion_encoder);
+  encoders[2] -> write(0/motores[2].resolucion_encoder);
+  encoders[3] -> write(0/motores[3].resolucion_encoder);
+  encoders[4] -> write(0/motores[4].resolucion_encoder);
 }
 
 void definir_nuevo_objetivo(){
@@ -228,7 +255,7 @@ void definir_nuevo_objetivo(){
   if(objetivo.x == objetivo.y == objetivo.z == 0){
     //CAMBIAR
     objetivo.x = 0.275;
-    objetivo.y = -0.085;
+    objetivo.y = 0.085;
     objetivo.z = 0.045;
     
     contador++;
@@ -237,7 +264,7 @@ void definir_nuevo_objetivo(){
 
   switch(pieza){
     case largo:
-      objetivo.y += 0.042*3;
+      objetivo.y -= 0.042*3;
 
       contador++;
       if(contador>=2){
@@ -248,10 +275,10 @@ void definir_nuevo_objetivo(){
     case normal:
       if(contador == 0){
         objetivo.z += 0.04;
-        objetivo.y += -0.085-0.042/2;
+        objetivo.y -= -0.085-0.042/2;
       }
       else
-        objetivo.y += 0.042*2;
+        objetivo.y -= 0.042*2;
       contador++;
       if(contador>=3){
         pieza = largo;
@@ -276,7 +303,7 @@ void abrir_gripper(){
   Serial.println("Abriendo Gripper...");
 
   while(abs(ina219.getCurrent_mA()) > 0.2){
-    analogWrite(g.pinA, (255/2));
+    analogWrite(g.pinA, 5);
     digitalWrite(g.pinB, LOW);
   }
   //Motor apagado
@@ -289,7 +316,7 @@ void cerrar_gripper(){
   Serial.println("Cerrando Gripper...");
 
   while(abs(ina219.getCurrent_mA()) > 0.2){
-    analogWrite(g.pinA, 255/2);
+    analogWrite(g.pinA, 5);
     digitalWrite(g.pinB, LOW);
   }
   //Motor sentido antihorario
@@ -383,6 +410,8 @@ estado_general mover_robot(punto punto_intermedio){
   do{
     finT = true;
     for(i=0;i<N_MOTORES;i++){
+      Serial.print("Estado motor ");
+      Serial.println(i+1);
       fin[i] = control_motor(motores[i], *encoders[i], amperimetros[i]);
 
       //Bloqueo
@@ -400,14 +429,21 @@ estado_general mover_robot(punto punto_intermedio){
   return;
 }
 
-double realimentacion(double q_d, double q_r, Encoder E){
+void realimentacion(Encoder E, motor& M){
   //Encoder
-  q_r = E.read();
-  return q_d - q_r;
+  M.q_r = E.read()*M.resolucion_encoder;
+  M.q_err = M.q_d - M.q_r;
+  Serial.print("q deseada: ");
+  Serial.println(M.q_d);
+  Serial.print("q real: ");
+  Serial.println(M.q_r);
+  Serial.print("Error: ");
+  Serial.println(M.q_err);
 }
 
 bool control_motor(motor& M, Encoder E, amperimetro& A){
 
+  
   leer_I(A);
   if(A.I > abs(M.Imax)){
     Serial.println("ERROR, CORRIENTE MAXIMA SUPERADA");
@@ -415,8 +451,18 @@ bool control_motor(motor& M, Encoder E, amperimetro& A){
     return false;
   }
 
-  M.q_err = realimentacion(M.q_d, M.q_r,E);
+  if(digitalRead(pinPulsador) == true){
+    Serial.println("PARADA");
+    M.estado = emergencia;
+    return false;
+  }
+
+  realimentacion(E, M);
   if(abs(M.q_err) < rango_error){
+
+      Serial.println("APAGADO");
+      
+
     //Apagar motor si no lo esta
     digitalWrite(M.pinA, LOW);
     digitalWrite(M.pinB, LOW);
@@ -424,14 +470,18 @@ bool control_motor(motor& M, Encoder E, amperimetro& A){
     return true; //Acabado
   }
   else if(M.q_err > 0){
-    //Motor Sentido horario
-    analogWrite(M.pinA, (255/2));
-    digitalWrite(M.pinB, LOW);
+    Serial.println("SENTIDO HORARIO");
+
+    //Motor Sentido horario (los engranajes cambian el sentido)
+    digitalWrite(M.pinA, LOW);
+    analogWrite(M.pinB, (10));
+    
   }
   else{
-    //Motor sentido antihorario
-    digitalWrite(M.pinA, LOW);
-    analogWrite(M.pinB, (255/2));
+    //Motor sentido antihorario (los engranajes cambian el sentido)
+    Serial.println("SENTIDO ANTIHORARIO");
+    analogWrite(M.pinA, (10));
+    digitalWrite(M.pinB, LOW);
   }
   M.estado = moviendo;
   return false; //Sigue funcionando
