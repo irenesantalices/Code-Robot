@@ -163,20 +163,20 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
   int i;
-
+/*
   if(evaluar_FP()==true){
     Serial.println("Iniciando ciclo de trabajo...");
     delay(2000);
     ciclo_trabajo();
   } 
+  */
   
-  /*
   if(evaluar_FP()==true){
     Serial.println("Iniciando calibracion...");
     delay(2000);
     calibrar_encoders();
   }
-*/
+
 /*
 if(evaluar_FP()==true){
     Serial.println("Espere...");
@@ -184,11 +184,11 @@ if(evaluar_FP()==true){
     Serial.println("Desplace el robot hasta el punto, depues pulse el boton");
     obtener_giros();
   }
-*/
+
   for(i=0;i<N_MOTORES;i++){
     motores[i].q_r = encoders[i]->read()*motores[i].resolucion_encoder*motores[i].relacion_transformacion;
   }
-  
+  */
 }
 
 void inicializar_motor(){
@@ -244,10 +244,10 @@ void inicializar_motor(){
   motores[4].resolucion_encoder = (2*M_PI)/1920;
 
   //relaciones de transformacion
-  motores[0].relacion_transformacion = 1/4;
-  motores[1].relacion_transformacion = 13/35;
-  motores[2].relacion_transformacion = 16/32;
-  motores[3].relacion_transformacion = 20/28;
+  motores[0].relacion_transformacion = 0.25;
+  motores[1].relacion_transformacion = 0.3714;
+  motores[2].relacion_transformacion = 0.5;
+  motores[3].relacion_transformacion = 0.7143;
   motores[4].relacion_transformacion = 1;
 }
 
@@ -267,7 +267,7 @@ void inicializar_amperimetro(){
 void inicializar_almacen(){
   almacen.x = 0;
   almacen.y = 0.26;
-  almacen.z = 0.13;
+  almacen.z = 0.03;
 }
 
 void inicializar_objetivo(){
@@ -300,9 +300,9 @@ void inicializar_encoder(){
   encoders[4] = &encoder_M5;
 
   encoders[0] -> write((M_PI_2)/motores[0].resolucion_encoder);
-  encoders[1] -> write((-6.20)/motores[1].resolucion_encoder);
-  encoders[2] -> write(3.42/motores[2].resolucion_encoder);
-  encoders[3] -> write(-0.97/motores[3].resolucion_encoder);
+  encoders[1] -> write(0/motores[1].resolucion_encoder);
+  encoders[2] -> write(0/motores[2].resolucion_encoder);
+  encoders[3] -> write(0/motores[3].resolucion_encoder);
   encoders[4] -> write(0/motores[4].resolucion_encoder);
 }
 
@@ -432,19 +432,20 @@ estado_general mover_robot(punto punto_intermedio){
   int i, j; //control bucles 
   //Calculamos las q necearias
   //decalracion orientaciones
-  
+  //Usando angulos
+  /*
   const double alpha = M_PI;
   const double fi = 0;
   const double theta = M_PI_2;
-/*
+
   const punto a={sin(theta)*sin(alpha)+cos(theta)*sin(fi)*cos(alpha),-cos(theta)*sin(alpha)+sin(theta)*sin(fi)*cos(alpha),cos(fi)*cos(alpha)};
   const punto o={-sin(theta)*cos(alpha)+cos(theta)*sin(fi)*sin(alpha),cos(theta)*cos(alpha)+sin(theta)*sin(fi)*sin(alpha),cos(fi)*sin(alpha)};
   const punto n={cos(theta)*cos(fi),sin(theta)*cos(fi),-sin(fi)};
    */
-  
-  const punto n={0.00,0.00,1.00};
-  const punto o={1.00,-1.00,0.00};
-  const punto a={1.00,0,0};
+  //Usando una matriz de rotacion
+  const punto n={0.69,0.47,0.86};
+  const punto o={-0.99,0.81,-0.33};
+  const punto a={-0.84,-0.36,0.4};
  
   //declaracion de variables intermediass
   double A,B,c5,s5,q234,p,c2,s2;
@@ -465,7 +466,7 @@ estado_general mover_robot(punto punto_intermedio){
   }
   A = p-l4*cos(q234)-l5*cos(q234);
   B = punto_intermedio.z-l1-l4*sin(q234)-l5*sin(q234);
-  motores[2].q_d = -acos((A*A+B*B-l2*l2-l3*l3)/(2*l2*l3));
+  motores[2].q_d = acos((A*A+B*B-l2*l2-l3*l3)/(2*l2*l3));
 
   c2 = (A*(l2+l3*cos(motores[2].q_d))+B*sin(motores[2].q_d)*l3)/(pow((l2+l3*cos(motores[2].q_d)),2)+pow((sin(motores[2].q_d)*l3),2));
   s2 = (B*(l2+l3*cos(motores[2].q_d))-A*l3*sin(motores[2].q_d))/(pow(l2+l3*cos(motores[2].q_d),2)+pow(sin(motores[2].q_d)*l3,2));
@@ -617,7 +618,7 @@ void calibrar_encoders(){
         analogWrite(motores[i].pinB, 0);
       }
 
-      else if(i%2 != 0){
+      else if(i%2 == 0){
         analogWrite(motores[i].pinA, (50));
         analogWrite(motores[i].pinB, 0);
       }
@@ -664,7 +665,8 @@ void obtener_giros(){
   while(true){
     if(evaluar_FP()==true){
       for(int i = 0; i<N_MOTORES; i++){
-        giros[i] = encoders[i]->read()*motores[i].resolucion_encoder*motores[i].relacion_transformacion;
+        giros[i] = encoders[i]->read();
+        giros[i] = giros[i] * motores[i].resolucion_encoder * motores[i].relacion_transformacion;
       }
       //Cinematica Directa
       n.x = sin(giros[1])*sin(giros[4])-sin(giros[1]+giros[2]+giros[3])*cos(giros[0])*cos(giros[4]);
@@ -679,14 +681,25 @@ void obtener_giros(){
       a.y = cos(giros[1]+giros[2]+giros[3])*sin(giros[0]);
       a.z = sin(giros[1]+giros[2]+giros[3]);
 
+      for(int i = 0;i<N_MOTORES;i++){
+        Serial.print(giros[i]);
+        Serial.print(" ");
+      }
+      Serial.println();
       Serial.print(n.x);
+      Serial.print(" ");
       Serial.print(n.y);
+      Serial.print(" ");
       Serial.println(n.z);
       Serial.print(o.x);
+      Serial.print(" ");
       Serial.print(o.y);
+      Serial.print(" ");
       Serial.println(o.z);
       Serial.print(a.x);
+      Serial.print(" ");
       Serial.print(a.y);
+      Serial.print(" ");
       Serial.println(a.z);
       return;
     }
